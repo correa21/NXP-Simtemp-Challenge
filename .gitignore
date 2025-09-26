@@ -1,0 +1,28 @@
+# Compiled kernel module files
+kernel/*.o
+kernel/*.ko
+kernel/*.mod.c
+kernel/modules.order
+kernel/Module.symvers
+kernel/.tmp_versions/
+kernel/build/
+
+# Compiled user-space application files
+user/cli/*.out
+user/gui/*.out
+user/cli/build/
+user/gui/build/
+
+# Python-specific files
+__pycache__/
+*.pyc
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.pro.user
+*~
+*.log
+*.swp
+tags
+cscope.*
