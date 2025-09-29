@@ -1,7 +1,10 @@
-obj-m += nxp_simtemp.o
+
+export KERNEL_SRC = /lib/modules/$(shell uname -r)/build
+
 
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	mkdir -p build
+	make -C $(KERNEL_SRC) src=$(PWD) M=$(PWD)/build modules
 
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	make -C $(KERNEL_SRC) src=$(PWD) M=$(PWD)/build clean
