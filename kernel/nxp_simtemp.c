@@ -8,7 +8,11 @@
 #define DEVICE_NAME "simtemp"
 
 
+#define SAMPLING_MS 1000
+#define TEMP_THRESHOLD 42000
+
 static char text[64];
+static struct hrtimer timer;
  
 /* --- Temperature Simulation --- */
 
@@ -20,6 +24,27 @@ static s32 generate_temp(void)
     temp = base_temp + (get_random_u32() % 200) - 100; /* +/- 0.1 °C jitter */
 
 	return temp;
+}
+
+static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
+{
+	struct simtemp_sample sample;
+
+	sample.timestamp_ns = ktime_get_ns();
+	sample.temp_mC = generate_temp();
+	sample.flags = SIMTEMP_FLAG_NEW_SAMPLE;
+
+
+	if (sample.temp_mC >= TEMP_THRESHOLD) {
+		sample.flags |= SIMTEMP_FLAG_THRESHOLD_CROSSED;
+	}
+    
+    pr_info("nxp_simtemp - timestamp: %llu, temp: %i\n", sample.timestamp_ns, sample.temp_mC);
+	
+    /* Reschedule the timer */
+	hrtimer_forward_now(timer, ms_to_ktime(SAMPLING_MS));
+
+	return HRTIMER_RESTART;
 }
 
 /* --- File Operations --- */
@@ -54,7 +79,7 @@ static ssize_t my_read(struct file *f, char __user *user_buf, size_t len, loff_t
 
     printk("nxp_simtemp - timestamp: %llu, temp: %i\n", sample.timestamp_ns, sample.temp_mC);
 
-	if (sample.temp_mC >= 42000) {
+	if (sample.temp_mC >= TEMP_THRESHOLD) {
 		sample.flags |= SIMTEMP_FLAG_THRESHOLD_CROSSED;
 	}
 
@@ -113,12 +138,20 @@ static int __init my_init(void)
     pr_err("nxp_simtemp - Error during Register misc device\n");
     return -status;
   }
+  /* Initialize and start the high-resolution timer */
+	hrtimer_init(&timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	timer.function = &simtemp_timer_callback;
+	hrtimer_start(&timer, ms_to_ktime(SAMPLING_MS), HRTIMER_MODE_REL);
+
   return 0;
 
 }
 
 static void __exit my_exit(void)
 {
+
+  hrtimer_cancel(&timer); 
+
 
   misc_deregister(&nxp_simtemp);
 }
