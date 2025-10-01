@@ -3,6 +3,7 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include "nxp_simtemp.h"
+#include "nxp_simtemp_ioctl.h"
 
 #define DRIVER_NAME "nxp_simtemp"
 #define DEVICE_NAME "simtemp"
@@ -11,9 +12,14 @@
 #define SAMPLING_MS 1000
 #define TEMP_THRESHOLD 42000
 
+/* Configuration bounds */
+#define MIN_SAMPLING_MS 10
+#define MAX_SAMPLING_MS 60000
+
 static char text[64];
 static struct hrtimer timer;
- 
+static u32 sampling_ms;
+static s32 threshold_mC;
 /* --- Temperature Simulation --- */
 
 static s32 generate_temp(void)
@@ -42,7 +48,7 @@ static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
     pr_info("nxp_simtemp - timestamp: %llu, temp: %i\n", sample.timestamp_ns, sample.temp_mC);
 	
     /* Reschedule the timer */
-	hrtimer_forward_now(timer, ms_to_ktime(SAMPLING_MS));
+	hrtimer_forward_now(timer, ms_to_ktime(sampling_ms));
 
 	return HRTIMER_RESTART;
 }
@@ -114,13 +120,39 @@ static ssize_t my_write(struct file *f, const char __user *user_buf, size_t len,
     *off += delta;
     return delta;
 }
+static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    pr_debug("nxp_simtemp - Received ioctl command: %#x\n", cmd);
+    pr_debug("nxp_simtemp - Expected ioctl command: %#lx\n", SIMTEMP_IOC_SET_CONFIG);
+	struct simtemp_config config;
 
+	if (cmd == SIMTEMP_IOC_SET_CONFIG) {
+		if (copy_from_user(&config, (void __user *)arg, sizeof(config)))
+			return -EFAULT;
+
+		if (config.sampling_ms < MIN_SAMPLING_MS || config.sampling_ms > MAX_SAMPLING_MS)
+			return -EINVAL;
+
+
+		sampling_ms = config.sampling_ms;
+		threshold_mC = config.threshold_mC;
+
+        pr_info("nxp_simtemp - Config changed, sampling: %u, threshold: %i\n", sampling_ms, threshold_mC);
+
+		/* Restart timer with new period */
+		hrtimer_start(&timer, ms_to_ktime(sampling_ms), HRTIMER_MODE_REL);
+		return 0;
+	}
+
+	return -ENOTTY;
+}
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = my_open,
     .release = my_release,
     .read = my_read,
-    .write = my_write
+    .write = my_write,
+    .unlocked_ioctl = my_ioctl
 };
 
 static struct miscdevice nxp_simtemp = {
@@ -131,6 +163,8 @@ static struct miscdevice nxp_simtemp = {
 
 static int __init my_init(void)
 {
+    sampling_ms = 1000; /* Default: 1 second */
+    threshold_mC = 50000; /* Default: 50.0 °C */
   int status;
   printk("nxp_simtemp - Register misc device\n");
   status = misc_register(&nxp_simtemp);
