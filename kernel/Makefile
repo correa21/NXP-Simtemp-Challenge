@@ -1,11 +1,21 @@
-export KERNEL_SRC = /lib/modules/$(shell uname -r)/build
+# Use := for immediate evaluation of shell command
+KERNEL_SRC := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
 
-all:
-	mkdir -p build
-	make -C $(KERNEL_SRC) src=$(PWD) M=$(PWD)/build modules
+# The default target
+all: modules
+
+# The modules target. Builds the kernel module.
+modules:
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
+
+# A debug target that passes an extra CFLAG
 debug:
-	mkdir -p build
-	make -C $(KERNEL_SRC) src=$(PWD) M=$(PWD)/build EXTRA_CFLAGS+=-DDEBUG modules
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) EXTRA_CFLAGS="-DDEBUG" modules
+
+# The clean target
 clean:
-	make -C $(KERNEL_SRC) src=$(PWD) M=$(PWD)/build clean
-	rm -r ./build
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) clean
+
+# Declare phony targets to avoid conflicts with filenames
+.PHONY: all modules dtbs clean debug
