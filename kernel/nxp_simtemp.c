@@ -27,7 +27,6 @@
 #define MIN_SAMPLING_MS 10
 #define MAX_SAMPLING_MS 60000
 
-static char text[64];
 static struct hrtimer timer;
 static u32 sampling_ms;
 static s32 threshold_mC;
@@ -42,6 +41,10 @@ struct simtemp_device {
    	/* Configuration */
 	u32 sampling_ms;
 	s32 threshold_mC;
+
+	/* State & Stats */
+	u32 event_flags;
+	u64 alert_count;
 
 	/* The kfifo to buffer samples */
     DECLARE_KFIFO(sample_fifo, struct simtemp_sample, FIFO_SIZE);
@@ -76,9 +79,11 @@ static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
 
 	if (sample.temp_mC >= sdev->threshold_mC) {
 		sample.flags |= SIMTEMP_FLAG_THRESHOLD_CROSSED;
+		sdev->event_flags |= SIMTEMP_FLAG_THRESHOLD_CROSSED;
+		sdev->alert_count++;
 	}
 
-    pr_debug("nxp_simtemp - timestamp: %llu, temp: %i\n", sample.timestamp_ns, sample.temp_mC);
+    pr_debug("nxp_simtemp - timestamp: %llu, temp: %i\n, flags: %i", sample.timestamp_ns, sample.temp_mC, sample.flags);
 
     kfifo_put(&sdev->sample_fifo, sample);
 
@@ -113,7 +118,6 @@ static ssize_t my_read(struct file *file, char __user *user_buf, size_t len, lof
 {
    	struct simtemp_device *sdev = file->private_data;
     int ret;
-    int not_copied, delta, to_copy = (len + *off) < sizeof(text) ? len :(sizeof(text) - *off);
     struct simtemp_sample sample;
     size_t sample_size = sizeof(struct simtemp_sample);
    	unsigned long flags;
@@ -130,26 +134,21 @@ static ssize_t my_read(struct file *file, char __user *user_buf, size_t len, lof
     printk("nxp_simtemp - Read is called");
 
     spin_lock_irqsave(&sdev->fifo_lock, flags);
+
 	ret = kfifo_get(&sdev->sample_fifo, &sample);
+
 	if (!ret) { /* Should not happen due to wait_event, but better be safe */
 		spin_unlock_irqrestore(&sdev->fifo_lock, flags);
 		return -EAGAIN;
 	}
 
+    /* Clear event flags on read */
+	sdev->event_flags = 0;
 	spin_unlock_irqrestore(&sdev->fifo_lock, flags);
-
-    if (*off >= sizeof(sample))
-    {
-        return 0;
-    }
-    not_copied = copy_to_user(user_buf, &sample, sample_size);
-    delta = to_copy - not_copied;
-    if (not_copied)
-    {
-        pr_warn("nxp_simtemp - could only copy %d bytes\n", delta);
-    }
-    *off += delta;
-    return delta;
+	if (copy_to_user(user_buf, &sample, sizeof(sample))) {
+	    return -EFAULT;
+	}
+	return sizeof(sample);
 }
 static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -177,12 +176,32 @@ static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	return -ENOTTY;
 }
+static __poll_t simtemp_poll(struct file *file, struct poll_table_struct *wait)
+{
+	struct simtemp_device *sdev = file->private_data;
+	__poll_t mask = 0;
+	unsigned long flags;
+
+	poll_wait(file, &sdev->wq, wait);
+
+	spin_lock_irqsave(&sdev->fifo_lock, flags);
+	if (!kfifo_is_empty(&sdev->sample_fifo))
+		mask |= EPOLLIN | EPOLLRDNORM; /* Data available to read */
+	if (sdev->event_flags & SIMTEMP_FLAG_THRESHOLD_CROSSED)
+		mask |= EPOLLPRI; /* High-priority event (alert) */
+	spin_unlock_irqrestore(&sdev->fifo_lock, flags);
+
+	return mask;
+}
+
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = my_open,
     .release = my_release,
     .read = my_read,
-    .unlocked_ioctl = my_ioctl
+    .poll = simtemp_poll,
+    .unlocked_ioctl = my_ioctl,
+    .llseek = no_llseek
 };
 
 static struct miscdevice nxp_simtemp = {
@@ -226,12 +245,9 @@ static int __init my_init(void)
 
 static void __exit my_exit(void)
 {
-
-  hrtimer_cancel(&simtemp_device->timer);
-
-
-  misc_deregister(&simtemp_device->miscdev);
-   kfree(simtemp_device);
+    hrtimer_cancel(&simtemp_device->timer);
+    misc_deregister(&simtemp_device->miscdev);
+    kfree(simtemp_device);
 }
 
 module_init(my_init);
