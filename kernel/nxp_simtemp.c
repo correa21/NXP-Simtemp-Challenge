@@ -37,6 +37,8 @@ struct simtemp_device {
     struct hrtimer timer;
 	spinlock_t fifo_lock; /* Protects kfifo and event_flags */
     wait_queue_head_t wq;
+   	struct mutex lock; /* Protects config variables */
+
 
    	/* Configuration */
 	u32 sampling_ms;
@@ -98,6 +100,65 @@ static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
 
 	return HRTIMER_RESTART;
 }
+
+/* --- Sysfs Attributes --- */
+
+/* sampling_ms (RW) */
+static ssize_t sampling_ms_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	return sysfs_emit(buf, "%u\n", sdev->sampling_ms);
+}
+static ssize_t sampling_ms_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	u32 new_period;
+	int ret = kstrtou32(buf, 10, &new_period);
+
+	if (ret)
+		return ret;
+	if (new_period < 10 || new_period > 60000) /* Sanity check: 10ms to 60s */
+		return -EINVAL;
+
+	mutex_lock(&sdev->lock);
+	sdev->sampling_ms = new_period;
+	hrtimer_start(&sdev->timer, ms_to_ktime(sdev->sampling_ms), HRTIMER_MODE_REL);
+	mutex_unlock(&sdev->lock);
+
+	return count;
+}
+static DEVICE_ATTR_RW(sampling_ms);
+
+/* threshold_mC (RW) */
+static ssize_t threshold_mC_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	return sysfs_emit(buf, "%d\n", sdev->threshold_mC);
+}
+static ssize_t threshold_mC_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	s32 new_thresh;
+	int ret = kstrtos32(buf, 10, &new_thresh);
+
+	if (ret)
+		return ret;
+
+	mutex_lock(&sdev->lock);
+	sdev->threshold_mC = new_thresh;
+	mutex_unlock(&sdev->lock);
+
+	return count;
+}
+static DEVICE_ATTR_RW(threshold_mC);
+
+
+static struct attribute *simtemp_attrs[] = {
+	&dev_attr_sampling_ms.attr,
+	&dev_attr_threshold_mC.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(simtemp);
 
 /* --- File Operations --- */
 static int my_open (struct inode *inode, struct file *file)
@@ -207,7 +268,8 @@ static struct file_operations fops = {
 static struct miscdevice nxp_simtemp = {
     .name = DEVICE_NAME,
     .minor = MISC_DYNAMIC_MINOR,
-    .fops = &fops
+    .fops = &fops,
+    .groups = simtemp_groups
 };
 
 static int __init my_init(void)
@@ -223,6 +285,7 @@ static int __init my_init(void)
     spin_lock_init(&simtemp_device->fifo_lock);
     init_waitqueue_head(&simtemp_device->wq);
     INIT_KFIFO(simtemp_device->sample_fifo);
+    mutex_init(&simtemp_device->lock);
 
     simtemp_device->sampling_ms = 1000; /* Default: 1 second */
     simtemp_device->threshold_mC = 50000; /* Default: 50.0 °C */
