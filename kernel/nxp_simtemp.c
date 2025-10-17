@@ -27,9 +27,6 @@
 #define MIN_SAMPLING_MS 10
 #define MAX_SAMPLING_MS 60000
 
-static struct hrtimer timer;
-static u32 sampling_ms;
-static s32 threshold_mC;
 
 struct simtemp_device {
 
@@ -46,7 +43,9 @@ struct simtemp_device {
 
 	/* State & Stats */
 	u32 event_flags;
+	u64 update_count;
 	u64 alert_count;
+	int last_error;
 
 	/* The kfifo to buffer samples */
     DECLARE_KFIFO(sample_fifo, struct simtemp_sample, FIFO_SIZE);
@@ -79,6 +78,7 @@ static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
 
 	spin_lock_irqsave(&sdev->fifo_lock, flags);
 
+	sdev->update_count++;
 	if (sample.temp_mC >= sdev->threshold_mC) {
 		sample.flags |= SIMTEMP_FLAG_THRESHOLD_CROSSED;
 		sdev->event_flags |= SIMTEMP_FLAG_THRESHOLD_CROSSED;
@@ -152,10 +152,30 @@ static ssize_t threshold_mC_store(struct device *dev, struct device_attribute *a
 }
 static DEVICE_ATTR_RW(threshold_mC);
 
+/* stats (RO) */
+static ssize_t stats_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	unsigned long flags;
+	u64 updates, alerts;
+	int err;
+
+	spin_lock_irqsave(&sdev->fifo_lock, flags);
+	updates = sdev->update_count;
+	alerts = sdev->alert_count;
+	spin_unlock_irqrestore(&sdev->fifo_lock, flags);
+	mutex_lock(&sdev->lock);
+	err = sdev->last_error;
+	mutex_unlock(&sdev->lock);
+
+	return sysfs_emit(buf, "updates=%llu alerts=%llu last_error=%d\n", updates, alerts, err);
+}
+static DEVICE_ATTR_RO(stats);
 
 static struct attribute *simtemp_attrs[] = {
 	&dev_attr_sampling_ms.attr,
 	&dev_attr_threshold_mC.attr,
+	&dev_attr_stats.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(simtemp);
@@ -207,6 +227,9 @@ static ssize_t my_read(struct file *file, char __user *user_buf, size_t len, lof
 	sdev->event_flags = 0;
 	spin_unlock_irqrestore(&sdev->fifo_lock, flags);
 	if (copy_to_user(user_buf, &sample, sizeof(sample))) {
+    	mutex_lock(&sdev->lock);
+        sdev->last_error = -EFAULT;
+        mutex_unlock(&sdev->lock);
 	    return -EFAULT;
 	}
 	return sizeof(sample);
@@ -215,6 +238,7 @@ static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     pr_debug("nxp_simtemp - Received ioctl command: %#x\n", cmd);
     pr_debug("nxp_simtemp - Expected ioctl command: %#lx\n", SIMTEMP_IOC_SET_CONFIG);
+    struct simtemp_device *sdev = file->private_data;
 	struct simtemp_config config;
 
 	if (cmd == SIMTEMP_IOC_SET_CONFIG) {
@@ -224,14 +248,15 @@ static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (config.sampling_ms < MIN_SAMPLING_MS || config.sampling_ms > MAX_SAMPLING_MS)
 			return -EINVAL;
 
+		mutex_lock(&sdev->lock);
+		sdev->sampling_ms = config.sampling_ms;
+		sdev->threshold_mC = config.threshold_mC;
+		mutex_unlock(&sdev->lock);
 
-		sampling_ms = config.sampling_ms;
-		threshold_mC = config.threshold_mC;
-
-        pr_info("nxp_simtemp - Config changed, sampling: %u, threshold: %i\n", sampling_ms, threshold_mC);
+		 pr_info("nxp_simtemp - Config changed, sampling: %u, threshold: %i\n", sdev->sampling_ms, sdev->threshold_mC);
 
 		/* Restart timer with new period */
-		hrtimer_start(&timer, ms_to_ktime(sampling_ms), HRTIMER_MODE_REL);
+		hrtimer_start(&sdev->timer, ms_to_ktime(sdev->sampling_ms), HRTIMER_MODE_REL);
 		return 0;
 	}
 
@@ -274,8 +299,7 @@ static struct miscdevice nxp_simtemp = {
 
 static int __init my_init(void)
 {
-    sampling_ms = 1000; /* Default: 1 second */
-    threshold_mC = 50000; /* Default: 50.0 °C */
+
     int status;
     simtemp_device = kzalloc(sizeof(*simtemp_device), GFP_KERNEL);
     if (!simtemp_device){
