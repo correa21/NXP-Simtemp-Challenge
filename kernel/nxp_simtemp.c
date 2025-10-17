@@ -27,6 +27,12 @@
 #define MIN_SAMPLING_MS 10
 #define MAX_SAMPLING_MS 60000
 
+/* Enum for simulation modes */
+enum simtemp_mode {
+	MODE_NORMAL,
+	MODE_NOISY,
+	MODE_RAMP,
+};
 
 struct simtemp_device {
 
@@ -40,8 +46,10 @@ struct simtemp_device {
    	/* Configuration */
 	u32 sampling_ms;
 	s32 threshold_mC;
+	enum simtemp_mode mode;
 
 	/* State & Stats */
+	s32 ramp_temp;
 	u32 event_flags;
 	u64 update_count;
 	u64 alert_count;
@@ -55,12 +63,29 @@ static struct simtemp_device *simtemp_device;
 
 /* --- Temperature Simulation --- */
 
-static s32 generate_temp(void)
+static s32 generate_temp(struct simtemp_device *sdev)
 {
-	static s32 base_temp = 42000; /* 42.000 °C */
+	s32 base_temp = 42000; /* 42.000 °C */
 	s32 temp;
+	s32 jitter = (get_random_u32() % 2000) - 1000; /* +/- 1.0 °C */
 
-    temp = base_temp + (get_random_u32() % 200) - 100; /* +/- 0.1 °C jitter */
+	switch (sdev->mode) {
+		case MODE_NOISY:
+			jitter *= 5; /* More noise */
+			/* fallthrough */
+			fallthrough; // kernel's dedicated fallthrough macro
+		case MODE_NORMAL:
+			temp = base_temp + jitter;
+			break;
+		case MODE_RAMP:
+			sdev->ramp_temp += 500; /* Ramp up by 0.5 °C each sample */
+			if (sdev->ramp_temp > 85000)
+				sdev->ramp_temp = 25000; /* Reset ramp */
+			temp = sdev->ramp_temp + (jitter / 2);
+			break;
+		default:
+			temp = 0;
+		}
 
 	return temp;
 }
@@ -73,7 +98,7 @@ static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
     struct simtemp_sample sample;
 
 	sample.timestamp_ns = ktime_get_real_ns();
-	sample.temp_mC = generate_temp();
+	sample.temp_mC = generate_temp(sdev);
 	sample.flags = SIMTEMP_FLAG_NEW_SAMPLE;
 
 	spin_lock_irqsave(&sdev->fifo_lock, flags);
@@ -85,7 +110,7 @@ static enum hrtimer_restart simtemp_timer_callback(struct hrtimer *timer)
 		sdev->alert_count++;
 	}
 
-    pr_debug("nxp_simtemp - timestamp: %llu, temp: %i\n, flags: %i", sample.timestamp_ns, sample.temp_mC, sample.flags);
+    pr_debug("nxp_simtemp - timestamp: %llu, temp: %i, flags: %i\n", sample.timestamp_ns, sample.temp_mC, sample.flags);
 
     kfifo_put(&sdev->sample_fifo, sample);
 
@@ -124,6 +149,7 @@ static ssize_t sampling_ms_store(struct device *dev, struct device_attribute *at
 	sdev->sampling_ms = new_period;
 	hrtimer_start(&sdev->timer, ms_to_ktime(sdev->sampling_ms), HRTIMER_MODE_REL);
 	mutex_unlock(&sdev->lock);
+	pr_debug("nxp_simtemp - new_sampling: %u\n", sdev->sampling_ms);
 
 	return count;
 }
@@ -147,6 +173,7 @@ static ssize_t threshold_mC_store(struct device *dev, struct device_attribute *a
 	mutex_lock(&sdev->lock);
 	sdev->threshold_mC = new_thresh;
 	mutex_unlock(&sdev->lock);
+	pr_debug("nxp_simtemp - new_threshold: %i\n", sdev->threshold_mC);
 
 	return count;
 }
@@ -172,10 +199,37 @@ static ssize_t stats_show(struct device *dev, struct device_attribute *attr, cha
 }
 static DEVICE_ATTR_RO(stats);
 
+/* mode (RW) */
+static const char *const simtemp_mode_str[] = { "normal", "noisy", "ramp" };
+static ssize_t mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	return sysfs_emit(buf, "%s\n", simtemp_mode_str[sdev->mode]);
+}
+static ssize_t mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct simtemp_device *sdev = dev_get_drvdata(dev);
+	int i;
+
+	for (i = 0; i < MODE_MAX; i++) {
+		if (sysfs_streq(buf, simtemp_mode_str[i])) {
+			mutex_lock(&sdev->lock);
+			sdev->mode = i;
+			if (i == MODE_RAMP)
+				sdev->ramp_temp = 25000; /* Reset ramp on mode set */
+			mutex_unlock(&sdev->lock);
+			return count;
+		}
+	}
+	return -EINVAL;
+}
+static DEVICE_ATTR_RW(mode);
+
 static struct attribute *simtemp_attrs[] = {
 	&dev_attr_sampling_ms.attr,
 	&dev_attr_threshold_mC.attr,
 	&dev_attr_stats.attr,
+	&dev_attr_mode.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(simtemp);
@@ -310,6 +364,7 @@ static int __init my_init(void)
     init_waitqueue_head(&simtemp_device->wq);
     INIT_KFIFO(simtemp_device->sample_fifo);
     mutex_init(&simtemp_device->lock);
+    simtemp_device->ramp_temp = 25000;
 
     simtemp_device->sampling_ms = 1000; /* Default: 1 second */
     simtemp_device->threshold_mC = 50000; /* Default: 50.0 °C */
