@@ -2,20 +2,22 @@
 KERNEL_SRC := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
+# The default 'all' target will build the modules.
+.PHONY: all
 # The default target
-all: modules
+all: modules dtbs
 
+.PHONY: modules
 # The modules target. Builds the kernel module.
 modules:
-	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
+	$(MAKE) -C "$(KDIR)" M="$(PWD)" modules
 
-# A debug target that passes an extra CFLAG
-debug:
-	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) EXTRA_CFLAGS="-DDEBUG" modules
+.PHONY: dtbs
+# The dtbs target, which depends on the module being built first
+dtbs: modules
+	dtc -I dts -O dtb -o $(PWD)/dts/simtemp.dtbo $(PWD)/dts/nxp-simtemp-overlay.dts
 
-# The clean target
+# The 'clean' target.
+.PHONY: clean
 clean:
-	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) clean
-
-# Declare phony targets to avoid conflicts with filenames
-.PHONY: all modules dtbs clean debug
+	$(MAKE) -C "$(KDIR)" M="$(PWD)" clean
