@@ -43,7 +43,7 @@ cd NXP-Simtemp-Challenge
 
 ```bash
 sudo apt update
-sudo apt install -y linux-headers-$(uname -r) build-essential python3 python3-venv python3-tk
+sudo apt install -y linux-headers-$(uname -r) build-essential python3 python3-venv python3-tk python3-dev pkg-config libfreetype-dev
 ```
 
 **Initialize Python Virtual Environment and install GUI dependencies:**
@@ -78,7 +78,6 @@ The easiest way to run the system and verify its core functionality is with the 
 **Important:** This script requires sudo privileges to load/unload kernel modules.
 
 ```bash
-cd simtemp/scripts
 sudo ./run_demo.sh
 ```
 
@@ -191,3 +190,4 @@ struct simtemp_sample {
 - [ ] **Unit Tests**: Add unit tests for user-space parsing logic.
 - [ ] **Linting**: Add a lint.sh script to run checkpatch.pl.
 - [ ] **Cross-Compile**: Validate cross-compilation support in the build scripts.
+- [ ] **CI/CD**: Implement a CI/CD pipeline on github.
