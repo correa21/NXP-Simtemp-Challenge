@@ -35,7 +35,7 @@ Before building, you must install kernel headers for your host system and the re
 **Clone the repository (if you haven't):**
 
 ```bash
-git clone https://github.com/correa21/NXP-Simtemp-Challenge
+git clone https://github.com/correa21/NXP-Simtemp-Challenge.git
 cd NXP-Simtemp-Challenge
 ```
 
@@ -43,15 +43,15 @@ cd NXP-Simtemp-Challenge
 
 ```bash
 sudo apt update
-sudo apt install \-y linux-headers-$(uname -r) build-essential python3 python3-venv python3-tk
+sudo apt install -y linux-headers-$(uname -r) build-essential python3 python3-venv python3-tk
 ```
 
 **Initialize Python Virtual Environment and install GUI dependencies:**
 
 ```bash
-python3 \-m venv venv
+python3 -m venv venv
 source venv/bin/activate
-pip install \-r user/gui/requirements.txt
+pip install -r user/gui/requirements.txt
 deactivate
 ```
 
@@ -79,7 +79,7 @@ The easiest way to run the system and verify its core functionality is with the 
 
 ```bash
 cd simtemp/scripts
-sudo ./run\_demo.sh
+sudo ./run_demo.sh
 ```
 
 The script performs the following actions:
@@ -112,20 +112,20 @@ After loading the module (e.g., sudo insmod kernel/nxp_simtemp.ko), you can inte
 1. **Check Sysfs:**
    ```bash
    ls -l /sys/class/misc/simtemp/
-   # See attributes like: sampling\_ms, threshold\_mC, mode, stats
+   # See attributes like: sampling_ms, threshold_mC, mode, stats
    ```
 2. Configure and Monitor (using simtemp-cli)  
    (Assumes you have run scripts/install_cli.sh)
 
    ```bash
    # Set sampling period to 500ms
-   simtemp-cli \--set-period 500
+   simtemp-cli --set-period 500
 
    # Set alert threshold to 40°C (40000 mC)
-   simtemp-cli \--set-threshold 40000
+   simtemp-cli --set-threshold 40000
 
    # Check the device statistics
-   simtemp-cli \--read-stats
+   simtemp-cli --read-stats
 
    # Monitor readings (default action)
    simtemp-cli
