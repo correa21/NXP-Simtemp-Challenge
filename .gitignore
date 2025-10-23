@@ -2,10 +2,15 @@
 kernel/*.o
 kernel/*.ko
 kernel/*.mod.c
+kernel/*.mod
+kernel/*.cmd
 kernel/modules.order
 kernel/Module.symvers
 kernel/.tmp_versions/
 kernel/build/
+
+# Compiled DT files
+kernel/dts/*.dtbo
 
 # Compiled user-space application files
 user/cli/*.out
