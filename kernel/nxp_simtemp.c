@@ -457,7 +457,7 @@ static struct platform_driver simtemp_driver = {
 	.remove = simtemp_remove,
 };
 
-#ifdef DEBUG
+#ifdef PC_BUILD
 static struct platform_device *simtemp_pdev;
 
 static int __init simtemp_module_init(void)
