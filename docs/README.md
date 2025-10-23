@@ -5,7 +5,7 @@ This repository contains a solution for the NXP Candidate Challenge, implementin
 **Submission Links:**
 
 - **Git Repository:** https://github.com/correa21/NXP-Simtemp-Challenge
-- **Demo Video:** \[PLACEHOLDER_LINK_TO_DEMO_VIDEO\]
+- **Demo Video:** https://youtu.be/4p-wi9_wMk8
 
 ## **Project Overview**
 
