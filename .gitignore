@@ -21,6 +21,7 @@ user/gui/build/
 # Python-specific files
 __pycache__/
 *.pyc
+venv/
 
 # Editor and IDE files
 .vscode/
