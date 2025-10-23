@@ -31,14 +31,19 @@ for arg in "$@"; do
       MAKE_ARGS+=" ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-"
       TARGET_INFO="32-bit ARM"
       ;;
+    PC)
+      # Define C macro to enable the local platform device path in nxp_simtemp.c
+      MAKE_ARGS+=" EXTRA_CFLAGS+=-DPC_BUILD"
+      TARGET_INFO="Native PC (DT-less testing)"
+      ;;
     debug)
       # This flag will be appended to the make command.
       # The kernel's Makefile uses it to enable debug symbols.
-      MAKE_ARGS+=" EXTRA_CFLAGS=-DDEBUG"
+      MAKE_ARGS+=" EXTRA_CFLAGS+=-DDEBUG"
       ;;
     *)
       echo "Error: Invalid argument '$arg'." >&2
-      echo "Usage: $0 [build32] [debug] [clean]" >&2
+      echo "Usage: $0 [build32|PC] [debug] [clean]" >&2
       exit 1
       ;;
   esac
