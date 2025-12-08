@@ -1,11 +1,6 @@
-# **NXP Simulated Temperature Sensor Project**
+# **Linux Kernel Platform Driver & Virtual Sensor**
 
-This repository contains a solution for the NXP Candidate Challenge, implementing a virtual temperature sensor system for Linux.
-
-**Submission Links:**
-
-- **Git Repository:** https://github.com/correa21/NXP-Simtemp-Challenge
-- **Demo Video:** https://youtu.be/4p-wi9_wMk8
+A complete embedded Linux solution implementing a virtual temperature sensor. This project demonstrates full-stack embedded development: writing a Linux Kernel Platform Driver (using kfifo, hrtimer, and spinlocks), exposing data via Sysfs and Character Devices, and consuming it with a custom User-space CLI and GUI.
 
 ## **Project Overview**
 
@@ -35,8 +30,8 @@ Before building, you must install kernel headers for your host system and the re
 **Clone the repository (if you haven't):**
 
 ```bash
-git clone https://github.com/correa21/NXP-Simtemp-Challenge.git
-cd NXP-Simtemp-Challenge
+git clone https://github.com/correa21/linux-virtual-sensor-driver.git
+cd linux-virtual-sensor-driver
 ```
 
 **Install kernel headers and build essentials on Debian/Ubuntu:**
@@ -109,10 +104,12 @@ sudo ./uninstall_cli.sh
 After loading the module (e.g., sudo insmod kernel/nxp_simtemp.ko), you can interact with the driver.
 
 1. **Check Sysfs:**
+
    ```bash
    ls -l /sys/class/misc/simtemp/
    # See attributes like: sampling_ms, threshold_mC, mode, stats
    ```
+
 2. Configure and Monitor (using simtemp-cli)  
    (Assumes you have run scripts/install_cli.sh)
 
@@ -134,10 +131,13 @@ After loading the module (e.g., sudo insmod kernel/nxp_simtemp.ko), you can inte
 
 3. Monitor Readings (Manual Python Call)  
    (If you did not install the CLI)
+
    ```bash
    python3 user/cli/main.py
    ```
+
 4. **Unload the Module:**
+
    ```bash
    sudo rmmod nxp_simtemp
    ```
@@ -191,3 +191,4 @@ struct simtemp_sample {
 - [ ] **Linting**: Add a lint.sh script to run checkpatch.pl.
 - [ ] **Cross-Compile**: Validate cross-compilation support in the build scripts.
 - [ ] **CI/CD**: Implement a CI/CD pipeline on github.
+- [ ] **Production Security**: Replace `sudo` usage in the GUI with `udev` rules to allow non-root access to sysfs nodes.

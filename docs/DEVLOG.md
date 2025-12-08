@@ -1,6 +1,7 @@
-# **AI Usage and Validation Notes**
+# **Development Log & Validation Notes**
 
-As permitted by the challenge, the Gemini AI model was used to generate the initial boilerplate code for the project. The development process was not a single prompt, but an extended, iterative debugging session where the AI served as a partner in analyzing errors and suggesting solutions. Validation was performed by compiling and running the code after each fix.
+The Gemini AI model was used to generate the initial boilerplate code for the project.
+The development process was not a single prompt, but an extended, iterative debugging session where the AI served as a partner in analyzing errors and suggesting solutions. Validation was performed by compiling and running the code after each fix.
 
 This document categorizes the key interactions by the type of problem encountered.
 

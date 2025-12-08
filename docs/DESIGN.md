@@ -62,7 +62,7 @@ end
 | Phase              | Entry Point         | Action                                                                                                                                                                        |
 | :----------------- | :------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Initialization** | simtemp_module_init | Triggers the .probe function (via DT on target, or manually via platform_device_alloc() in PC Build mode). Allocates resources, registers miscdevice, and starts the hrtimer. |
-| **Data Prod.**     | hrtimer Callback    | Generates sample, pushes to kfifo, checks threshold against **Shared State **, and calls wake_up_interruptible() on the **Wait Queue**.                                       |
+| **Data Prod.**     | hrtimer Callback    | Generates sample, pushes to kfifo, checks threshold against **Shared State**, and calls wake_up_interruptible() on the **Wait Queue**.                                       |
 | **Data Cons.**     | read()              | Blocks on **E** until data is available, then pulls one sample from the kfifo and copies it to user-space.                                                                    |
 | **Re-config.**     | sysfs store / ioctl | Updates configuration variables (D). **All updates to D and timer manipulation must be protected by the Spinlock**.                                                           |
 
@@ -81,6 +81,10 @@ A **Spinlock** is mandatory due to concurrency between the **Process Context** (
 
 - **Critical Bug Discovered:** An early design would update config variables inside the lock but perform timer manipulations (hrtimer_start) outside the lock. This led to a race condition and subsequent kernel crash.
 - **Solution:** All functions that modify the timer state or access the configuration variables **must be protected by spin_lock_irqsave / spin_unlock_irqrestore** to serialize access against the high-priority timer interrupt.
+
+### **2.4. Security and Permissions**
+
+The current user-space application uses `sudo` subprocess calls to write to sysfs for simplicity during the evaluation phase. In a production environment, this would be replaced by a **udev rule** (e.g., `KERNEL=="simtemp", MODE="0666"`) to grant the user group write access to the device attributes without elevated privileges.
 
 ## **3\. Scaling and Performance Analysis**
 
